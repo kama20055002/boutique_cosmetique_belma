@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Espace Gestionnaire - Boutique Cosmétiques</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8f5f6; color: #333; margin: 0; padding: 20px; }
+        header { background: #6b2d45; color: white; padding: 15px 25px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; }
+        header a { color: #ffd6e5; text-decoration: none; font-weight: bold; }
+        h2 { color: #6b2d45; border-bottom: 2px solid #e5cfd6; padding-bottom: 8px; }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 25px; }
+        form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; align-items: end; }
+        input, select, button { padding: 9px 12px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+        button { background: #6b2d45; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #873a58; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f3e8ec; color: #6b2d45; }
+        .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .ok { background: #d4edda; color: #155724; }
+        .faible { background: #fff3cd; color: #856404; }
+        .rupture { background: #f8d7da; color: #721c24; }
+        .btn-sm { padding: 5px 10px; font-size: 12px; }
+        .btn-off { background: #6c757d; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Tableau de Bord Gestionnaire</h1>
+    <a href="/admin.html">Aller vers Espace Admin &rarr;</a>
+</header>
+
+<!-- Formulaire d'ajout de produit -->
+<div class="card">
+    <h2>Ajouter un nouveau produit</h2>
+    <form id="form-produit">
+        <input type="text" id="nom" placeholder="Nom du produit" required>
+        <input type="text" id="description" placeholder="Description">
+        <input type="number" step="0.01" id="prix" placeholder="Prix ($)" required>
+        <input type="number" id="stock" placeholder="Stock initial" required>
+        <select id="categorie_id" required></select>
+        <select id="marque_id"><option value="">-- Sans marque --</option></select>
+        <button type="submit">+ Ajouter</button>
+    </form>
+</div>
+
+<!-- Gestion des produits et du stock -->
+<div class="card">
+    <h2>Inventaire et Catalogue Produits</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Produit</th>
+                <th>Catégorie / Marque</th>
+                <th>Prix</th>
+                <th>Stock</th>
+                <th>État</th>
+                <th>Statut Catalogue</th>
+            </tr>
+        </thead>
+        <tbody id="table-produits"></tbody>
+    </table>
+</div>
+
+<!-- Gestion des livraisons -->
+<div class="card">
+    <h2>Suivi des Livraisons</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Livraison #</th>
+                <th>Commande #</th>
+                <th>Client</th>
+                <th>Adresse</th>
+                <th>Expédition</th>
+                <th>Livraison</th>
+                <th>Statut</th>
+            </tr>
+        </thead>
+        <tbody id="table-livraisons"></tbody>
+    </table>
+</div>
+
+<script>
+    // Charger catégories et marques pour le formulaire
+    async function chargerListes() {
+        const [resCat, resMarq] = await Promise.all([
+            fetch('/api/catalogue/categories'),
+            fetch('/api/catalogue/marques')
+        ]);
+        const categories = await resCat.json();
+        const marques = await resMarq.json();
+
+        const selCat = document.getElementById('categorie_id');
+        categories.forEach(c => selCat.innerHTML += `<option value="${c.id}">${c.nom}</option>`);
+
+        const selMarq = document.getElementById('marque_id');
+        marques.forEach(m => selMarq.innerHTML += `<option value="${m.id}">${m.nom}</option>`);
+    }
+
+    // Charger tous les produits (actifs et inactifs)
+    async function chargerProduits() {
+        const res = await fetch('/api/gestion/produits');
+        const produits = await res.json();
+        const tbody = document.getElementById('table-produits');
+        tbody.innerHTML = '';
+
+        produits.forEach(p => {
+            const classeEtat = p.etat_stock === 'Rupture' ? 'rupture' : (p.etat_stock === 'Stock faible' ? 'faible' : 'ok');
+            tbody.innerHTML += `
+                <tr>
+                    <td>#${p.id}</td>
+                    <td><strong>${p.nom}</strong></td>
+                    <td>${p.categorie_nom} <small>(${p.marque_nom || 'N/A'})</small></td>
+                    <td>${Number(p.prix).toFixed(2)} $</td>
+                    <td>
+                        <input type="number" id="stock-${p.id}" value="${p.quantite_stock}" style="width: 60px;">
+                        <button class="btn-sm" onclick="majStock(${p.id})">OK</button>
+                    </td>
+                    <td><span class="badge ${classeEtat}">${p.etat_stock}</span></td>
+                    <td>
+                        <button class="btn-sm ${p.actif ? '' : 'btn-off'}" onclick="toggleStatut(${p.id}, ${!p.actif})">
+                            ${p.actif ? 'Actif (Retirer)' : 'Inactif (Activer)'}
+                        </button>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    // Charger les livraisons
+    async function chargerLivraisons() {
+        const res = await fetch('/api/gestion/livraisons');
+        const livraisons = await res.json();
+        const tbody = document.getElementById('table-livraisons');
+        tbody.innerHTML = '';
+
+        const statuts = ['En attente', 'En préparation', 'Expédiée', 'Livrée'];
+
+        livraisons.forEach(l => {
+            const options = statuts.map(s => `<option value="${s}" ${l.statut_livraison === s ? 'selected' : ''}>${s}</option>`).join('');
+            tbody.innerHTML += `
+                <tr>
+                    <td>#${l.livraison_id}</td>
+                    <td>#${l.commande_id} (${Number(l.montant_total).toFixed(2)} $)</td>
+                    <td>${l.client_nom}</td>
+                    <td>${l.adresse}</td>
+                    <td>${l.date_expedition ? new Date(l.date_expedition).toLocaleDateString() : '-'}</td>
+                    <td>${l.date_livraison ? new Date(l.date_livraison).toLocaleDateString() : '-'}</td>
+                    <td>
+                        <select onchange="majLivraison(${l.livraison_id}, this.value)">${options}</select>
+                    </td>
+                </tr>
+            `;
+        });
+    }
+
+    // Actions API
+    document.getElementById('form-produit').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await fetch('/api/gestion/produits', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                nom: document.getElementById('nom').value,
+                description: document.getElementById('description').value,
+                prix: document.getElementById('prix').value,
+                quantite_stock: document.getElementById('stock').value,
+                categorie_id: document.getElementById('categorie_id').value,
+                marque_id: document.getElementById('marque_id').value || null
+            })
+        });
+        e.target.reset();
+        chargerProduits();
+    });
+
+    async function majStock(id) {
+        const quantite_stock = document.getElementById(`stock-${id}`).value;
+        await fetch(`/api/gestion/produits/${id}/stock`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quantite_stock })
+        });
+        chargerProduits();
+    }
+
+    async function toggleStatut(id, actif) {
+        await fetch(`/api/gestion/produits/${id}/statut`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ actif })
+        });
+        chargerProduits();
+    }
+
+    async function majLivraison(id, statut) {
+        await fetch(`/api/gestion/livraisons/${id}/statut`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ statut })
+        });
+        chargerLivraisons();
+    }
+
+    chargerListes();
+    chargerProduits();
+    chargerLivraisons();
+</script>
+</body>
+</html>
