@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boutique Cosmétiques - Catalogue & Panier</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #faf7f8; color: #333; margin: 0; padding: 20px; }
+        header { background: #8e3b5c; color: white; padding: 15px 25px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        header nav a { color: #ffd6e5; text-decoration: none; margin-left: 15px; font-weight: bold; }
+        .layout { display: grid; grid-template-columns: 2fr 1fr; gap: 25px; align-items: start; }
+        @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+        .card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .filtres { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+        input, select, button { padding: 8px 12px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; }
+        button { background: #8e3b5c; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #a8496f; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .grille-produits { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 15px; }
+        .produit { border: 1px solid #eee; border-radius: 8px; padding: 15px; display: flex; flex-direction: column; justify-content: space-between; }
+        .produit h3 { margin: 0 0 6px 0; color: #8e3b5c; font-size: 16px; }
+        .produit .meta { font-size: 12px; color: #777; margin-bottom: 8px; }
+        .produit .prix { font-size: 18px; font-weight: bold; margin: 8px 0; }
+        .rupture { color: #c0392b; font-weight: bold; font-size: 13px; }
+        .panier-item { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #eee; padding: 10px 0; }
+        .panier-total { font-size: 18px; font-weight: bold; text-align: right; margin-top: 15px; color: #8e3b5c; }
+        .btn-del { background: #c0392b; padding: 4px 8px; font-size: 12px; }
+        .msg-erreur { color: #c0392b; font-size: 13px; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Boutique Cosmétiques</h1>
+    <nav>
+        <a href="/gestionnaire.html">Espace Gestionnaire</a>
+        <a href="/admin.html">Espace Admin</a>
+    </nav>
+</header>
+
+<div class="layout">
+    <!-- Colonne Catalogue -->
+    <div class="card">
+        <h2>Catalogue Produits</h2>
+        <div class="filtres">
+            <input type="text" id="search" placeholder="Rechercher un produit...">
+            <select id="filtre-categorie"><option value="">Toutes les catégories</option></select>
+            <select id="filtre-marque"><option value="">Toutes les marques</option></select>
+            <input type="number" id="prix-max" placeholder="Prix max ($)" style="width: 110px;">
+            <button onclick="chargerCatalogue()">Filtrer</button>
+        </div>
+        <div class="grille-produits" id="liste-produits"></div>
+    </div>
+
+    <!-- Colonne Panier -->
+    <div class="card">
+        <h2>Mon Panier (Client #1)</h2>
+        <div id="contenu-panier">Chargement...</div>
+        <div class="panier-total" id="sous-total">Sous-total : 0.00 $</div>
+        <div class="msg-erreur" id="erreur-panier"></div>
+    </div>
+</div>
+
+<script>
+    const UTILISATEUR_ID = 1;
+
+    async function chargerFiltres() {
+        const [resCat, resMarq] = await Promise.all([
+            fetch('/api/catalogue/categories'),
+            fetch('/api/catalogue/marques')
+        ]);
+        const categories = await resCat.json();
+        const marques = await resMarq.json();
+
+        categories.forEach(c => {
+            document.getElementById('filtre-categorie').innerHTML += `<option value="${c.id}">${c.nom}</option>`;
+        });
+        marques.forEach(m => {
+            document.getElementById('filtre-marque').innerHTML += `<option value="${m.id}">${m.nom}</option>`;
+        });
+    }
+
+    async function chargerCatalogue() {
+        const params = new URLSearchParams();
+        const search = document.getElementById('search').value;
+        const cat = document.getElementById('filtre-categorie').value;
+        const marq = document.getElementById('filtre-marque').value;
+        const max = document.getElementById('prix-max').value;
+
+        if (search) params.append('search', search);
+        if (cat) params.append('categorie_id', cat);
+        if (marq) params.append('marque_id', marq);
+        if (max) params.append('prix_max', max);
+
+        const res = await fetch(`/api/catalogue/produits?${params.toString()}`);
+        const produits = await res.json();
+        const conteneur = document.getElementById('liste-produits');
+
+        if (produits.length === 0) {
+            conteneur.innerHTML = '<p>Aucun produit ne correspond à votre recherche.</p>';
+            return;
+        }
+
+        conteneur.innerHTML = produits.map(p => `
+            <div class="produit">
+                <div>
+                    <h3>${p.nom}</h3>
+                    <div class="meta">${p.categorie_nom} • ${p.marque_nom || 'Sans marque'}</div>
+                    <p style="font-size: 13px;">${p.description || ''}</p>
+                </div>
+                <div>
+                    <div class="prix">${Number(p.prix).toFixed(2)} $</div>
+                    ${p.quantite_stock > 0 
+                        ? `<button onclick="ajouterPanier(${p.id})">Ajouter au panier (${p.quantite_stock} disp.)</button>`
+                        : `<span class="rupture">Rupture de stock</span>`
+                    }
+                </div>
+            </div>
+        `).join('');
+    }
+
+    async function chargerPanier() {
+        const res = await fetch(`/api/panier/${UTILISATEUR_ID}`);
+        const data = await res.json();
+        const zone = document.getElementById('contenu-panier');
+
+        if (data.articles.length === 0) {
+            zone.innerHTML = '<p>Votre panier est vide.</p>';
+        } else {
+            zone.innerHTML = data.articles.map(item => `
+                <div class="panier-item">
+                    <div>
+                        <strong>${item.nom}</strong><br>
+                        <small>${Number(item.prix_unitaire).toFixed(2)} $ × </small>
+                        <input type="number" min="1" max="${item.quantite_stock}" value="${item.quantite}" 
+                               style="width: 45px; padding: 3px;"
+                               onchange="modifierQte(${item.detail_id}, this.value)">
+                    </div>
+                    <div>
+                        <strong>${Number(item.total_ligne).toFixed(2)} $</strong>
+                        <button class="btn-del" onclick="supprimerItem(${item.detail_id})">X</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+        document.getElementById('sous-total').textContent = `Sous-total : ${data.sous_total.toFixed(2)} $`;
+    }
+
+    async function ajouterPanier(produit_id) {
+        document.getElementById('erreur-panier').textContent = '';
+        const res = await fetch('/api/panier/ajouter', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ utilisateur_id: UTILISATEUR_ID, produit_id, quantite: 1 })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            document.getElementById('erreur-panier').textContent = data.message;
+        }
+        chargerPanier();
+    }
+
+    async function modifierQte(detail_id, quantite) {
+        document.getElementById('erreur-panier').textContent = '';
+        const res = await fetch(`/api/panier/modifier/${detail_id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ quantite })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            document.getElementById('erreur-panier').textContent = data.message;
+        }
+        chargerPanier();
+    }
+
+    async function supprimerItem(detail_id) {
+        await fetch(`/api/panier/supprimer/${detail_id}`, { method: 'DELETE' });
+        chargerPanier();
+    }
+
+    chargerFiltres();
+    chargerCatalogue();
+    chargerPanier();
+</script>
+</body>
+</html>
