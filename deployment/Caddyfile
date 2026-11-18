@@ -1,0 +1,23 @@
+# Caddy obtient et renouvelle automatiquement le certificat HTTPS (Let's Encrypt)
+# pour le domaine défini dans .env (DOMAINE). Avec DOMAINE=localhost : certificat local de test.
+{$DOMAINE} {
+	encode gzip
+
+	# L'API
+	handle /api/* {
+		reverse_proxy app:3000
+	}
+
+	# Le frontend (fichiers générés par `npm run build` dans frontend/dist)
+	handle {
+		root * /srv/frontend
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}

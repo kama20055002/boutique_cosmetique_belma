@@ -1,0 +1,72 @@
+# Déploiement complet : base MySQL + API + proxy HTTPS (Caddy) + frontend statique.
+# Usage : cp .env.example .env  (puis le remplir)  &&  docker compose up -d --build
+
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?définir DB_ROOT_PASSWORD dans .env}
+      MYSQL_DATABASE: ${DB_NAME:-boutique_cosmetique}
+      MYSQL_USER: ${DB_USER:-boutique}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?définir DB_PASSWORD dans .env}
+    volumes:
+      - db_data:/var/lib/mysql
+      # Exécuté UNE SEULE FOIS, à la création du volume (base vide)
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  app:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-boutique_cosmetique}
+      DB_USER: ${DB_USER:-boutique}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?définir JWT_SECRET dans .env}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-2h}
+      FRONTEND_URL: ${FRONTEND_URL:-https://localhost}
+      TAUX_TAXE: ${TAUX_TAXE:-0.13}
+      FRAIS_LIVRAISON: ${FRAIS_LIVRAISON:-8}
+      LIVRAISON_GRATUITE_DES: ${LIVRAISON_GRATUITE_DES:-0}
+      PAIEMENT_EXPIRATION_MINUTES: ${PAIEMENT_EXPIRATION_MINUTES:-15}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/sante || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    # Aucun port publié : l'API n'est joignable que par Caddy, à l'intérieur du réseau Docker
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAINE: ${DOMAINE:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./frontend/dist:/srv/frontend:ro   # build du frontend (npm run build) de Nora
+      - caddy_data:/data                    # certificats HTTPS
+      - caddy_config:/config
+
+volumes:
+  db_data:
+  caddy_data:
+  caddy_config:
